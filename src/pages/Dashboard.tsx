@@ -9,11 +9,27 @@ import { calculateDashboardStats } from '@/lib/dataProcessing';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import { Skeleton } from '@/components/ui/skeleton';
+import { api } from '@/lib/api';
+import { useState, useEffect } from 'react';
 
 const COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))'];
 
 export default function Dashboard() {
   const { spaces, loading } = useData();
+  const [uploadHistory, setUploadHistory] = useState<any[]>([]);
+
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const history = await api.getUploadHistory();
+        setUploadHistory(history);
+      } catch (error) {
+        console.error('Failed to load upload history:', error);
+      }
+    };
+    
+    loadHistory();
+  }, []);
 
   if (loading) {
     return (
@@ -200,28 +216,64 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Quick Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <Button asChild variant="outline" className="w-full">
-              <Link to="/upload">Upload New Data</Link>
-            </Button>
-            <Button asChild variant="outline" className="w-full">
-              <Link to="/spaces">View All Spaces</Link>
-            </Button>
-            <Button asChild variant="outline" className="w-full">
-              <Link to="/duplicates">Find Duplicates</Link>
-            </Button>
-            <Button asChild variant="outline" className="w-full">
-              <Link to="/cities">Browse by City</Link>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Quick Actions and Recent Uploads */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Quick Actions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Button asChild variant="outline" className="w-full">
+                <Link to="/upload">Upload New Data</Link>
+              </Button>
+              <Button asChild variant="outline" className="w-full">
+                <Link to="/spaces">View All Spaces</Link>
+              </Button>
+              <Button asChild variant="outline" className="w-full">
+                <Link to="/duplicates">Find Duplicates</Link>
+              </Button>
+              <Button asChild variant="outline" className="w-full">
+                <Link to="/cities">Browse by City</Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Uploads</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {uploadHistory.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">No upload history</p>
+              ) : (
+                uploadHistory.slice(0, 5).map((upload) => (
+                  <div key={upload.session_id} className="flex justify-between items-center text-sm border-b border-border pb-2 last:border-0">
+                    <div>
+                      <p className="font-medium truncate">{upload.filename}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {new Date(upload.upload_timestamp).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium">{upload.total_records || upload.current_records} spaces</p>
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        upload.status === 'completed' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
+                        upload.status === 'processing' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300' :
+                        'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300'
+                      }`}>
+                        {upload.status}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

@@ -64,6 +64,15 @@ This project is built with:
 
 Simply open [Lovable](https://lovable.dev/projects/21c2cdaa-8544-4471-81e1-3e7a753387e5) and click on Share -> Publish.
 
+## Backend Setup
+
+This app requires a backend API server for full functionality. The backend connects to n8n workflow and MySQL database.
+
+Configure the API URL in your `.env` file:
+```
+VITE_API_URL=http://localhost:3001
+```
+
 ## Can I connect a custom domain to my Lovable project?
 
 Yes, you can!

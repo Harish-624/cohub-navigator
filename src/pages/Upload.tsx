@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import { Upload as UploadIcon, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import { Upload as UploadIcon, FileText, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import Papa from 'papaparse';
 import { PageHeader } from '@/components/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +11,7 @@ import { saveSpaces, saveUpload } from '@/lib/db';
 import { useData } from '@/contexts/DataContext';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { api, type UploadResponse, type UploadStatus } from '@/lib/api';
 
 export default function Upload() {
   const [dragActive, setDragActive] = useState(false);
@@ -18,6 +19,11 @@ export default function Upload() {
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState<string>('');
   const [uploadResult, setUploadResult] = useState<UploadMetadata | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [uploadingToBackend, setUploadingToBackend] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<UploadStatus | null>(null);
+  const [processingStage, setProcessingStage] = useState<string>('');
   const { toast } = useToast();
   const { refreshData } = useData();
   const navigate = useNavigate();
@@ -32,8 +38,8 @@ export default function Upload() {
     }
   }, []);
 
-  const processFile = async (file: File) => {
-    if (!file.name.endsWith('.csv')) {
+  const processFile = async (selectedFile: File) => {
+    if (!selectedFile.name.endsWith('.csv')) {
       toast({
         title: 'Invalid File Type',
         description: 'Please upload a CSV file',
@@ -42,71 +48,110 @@ export default function Upload() {
       return;
     }
 
+    setFile(selectedFile);
     setUploading(true);
-    setProgress(10);
-    setStatus('Reading file...');
-    const startTime = Date.now();
+    setUploadingToBackend(true);
+    setProcessingStage('Uploading file to server...');
 
     try {
-      const text = await file.text();
-      setProgress(30);
-      setStatus('Parsing CSV data...');
-
-      Papa.parse<CoworkingSpace>(text, {
-        header: true,
-        skipEmptyLines: true,
-        complete: async (results) => {
-          setProgress(50);
-          setStatus('Processing data...');
-
-          const spaces = results.data.filter((space: CoworkingSpace) => 
-            space.name && space.address && space.city
-          );
-
-          setProgress(70);
-          setStatus('Saving to database...');
-
-          const uploadId = `upload-${Date.now()}`;
-          await saveSpaces(spaces, uploadId);
-
-          const processingTime = Date.now() - startTime;
-          const metadata: UploadMetadata = {
-            id: uploadId,
-            filename: file.name,
-            timestamp: new Date(),
-            recordCount: spaces.length,
-            processingTime,
-            status: 'success',
-          };
-
-          await saveUpload(metadata);
-          setProgress(100);
-          setStatus('Complete!');
-          setUploadResult(metadata);
-
-          await refreshData();
-
-          toast({
-            title: 'Upload Successful',
-            description: `Processed ${spaces.length} co-working spaces`,
-          });
-        },
-        error: (error) => {
-          throw error;
-        },
+      // Upload to backend
+      const uploadResponse = await api.uploadCSV(selectedFile);
+      
+      setSessionId(uploadResponse.session_id);
+      setProcessingStage(`Processing ${uploadResponse.total_cities} cities...`);
+      
+      toast({
+        title: 'Upload Started',
+        description: `Session ID: ${uploadResponse.session_id}`,
       });
+      
     } catch (error) {
       console.error('Upload error:', error);
       toast({
         title: 'Upload Failed',
-        description: 'There was an error processing your file',
+        description: error instanceof Error ? error.message : 'Upload failed',
         variant: 'destructive',
       });
       setUploading(false);
-      setStatus('');
-      setProgress(0);
+      setUploadingToBackend(false);
     }
   };
+
+  // Polling effect for upload status
+  useEffect(() => {
+    if (!sessionId || uploadStatus?.status === 'completed' || uploadStatus?.status === 'failed') {
+      return;
+    }
+    
+    const pollStatus = async () => {
+      try {
+        const status = await api.getUploadStatus(sessionId);
+        setUploadStatus(status);
+        
+        setProcessingStage(
+          `Processing: ${status.current_records} of ${status.total_cities} locations found...`
+        );
+        
+        if (status.status === 'completed') {
+          setProcessingStage('Fetching results from database...');
+          
+          // Fetch all spaces for this session
+          const spaces = await api.getAllSpaces(sessionId);
+          
+          // Save to IndexedDB
+          await saveSpaces(spaces as any, sessionId);
+          const metadata: UploadMetadata = {
+            id: sessionId,
+            filename: file?.name || 'upload.csv',
+            timestamp: new Date(),
+            recordCount: spaces.length,
+            processingTime: 0,
+            status: 'success',
+          };
+          await saveUpload(metadata);
+          
+          // Update context
+          await refreshData();
+          
+          setUploading(false);
+          setUploadingToBackend(false);
+          setUploadResult(metadata);
+          
+          toast({
+            title: 'Upload Complete',
+            description: `Successfully imported ${spaces.length} co-working spaces!`,
+          });
+          
+          // Reset for next upload
+          setTimeout(() => {
+            setFile(null);
+            setSessionId(null);
+            setUploadStatus(null);
+            setProcessingStage('');
+          }, 3000);
+        } else if (status.status === 'failed') {
+          throw new Error('Processing failed');
+        }
+      } catch (error) {
+        console.error('Status polling error:', error);
+        toast({
+          title: 'Processing Failed',
+          description: 'Failed to check upload status',
+          variant: 'destructive',
+        });
+        setUploading(false);
+        setUploadingToBackend(false);
+      }
+    };
+    
+    // Poll every 3 seconds
+    const interval = setInterval(pollStatus, 3000);
+    
+    // Initial poll
+    pollStatus();
+    
+    return () => clearInterval(interval);
+  }, [sessionId, uploadStatus?.status, file?.name, refreshData, toast]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -177,13 +222,29 @@ export default function Upload() {
             <CardTitle>Processing Upload</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">{status}</span>
-                <span className="font-medium">{progress}%</span>
+            <div className="flex items-center justify-center space-y-3 flex-col">
+              <div className="flex items-center space-x-3">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <p className="text-lg font-medium">{processingStage || 'Processing...'}</p>
               </div>
-              <Progress value={progress} className="h-2" />
             </div>
+            
+            {uploadStatus && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm text-muted-foreground">
+                  <span>Progress</span>
+                  <span>{uploadStatus.current_records} / {uploadStatus.total_cities} locations</span>
+                </div>
+                <div className="w-full bg-secondary rounded-full h-2">
+                  <div 
+                    className="bg-primary h-2 rounded-full transition-all duration-300"
+                    style={{ 
+                      width: `${(uploadStatus.current_records / uploadStatus.total_cities) * 100}%` 
+                    }}
+                  />
+                </div>
+              </div>
+            )}
             
             <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
               <div className="animate-spin h-5 w-5 border-2 border-primary border-t-transparent rounded-full" />
