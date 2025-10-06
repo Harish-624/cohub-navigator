@@ -317,9 +317,10 @@ export default function Upload() {
           <div>
             <h4 className="font-medium mb-2">Required Columns:</h4>
             <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
-              <li><code className="px-1 py-0.5 bg-muted rounded text-xs">name</code> - Name of the co-working space</li>
-              <li><code className="px-1 py-0.5 bg-muted rounded text-xs">address</code> - Full address</li>
+              <li><code className="px-1 py-0.5 bg-muted rounded text-xs">region</code> - Region name</li>
               <li><code className="px-1 py-0.5 bg-muted rounded text-xs">city</code> - City name</li>
+              <li><code className="px-1 py-0.5 bg-muted rounded text-xs">state</code> - State name</li>
+              <li><code className="px-1 py-0.5 bg-muted rounded text-xs">country</code> - Country name</li>
             </ul>
           </div>
 
