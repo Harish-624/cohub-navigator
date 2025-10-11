@@ -66,7 +66,7 @@ Simply open [Lovable](https://lovable.dev/projects/21c2cdaa-8544-4471-81e1-3e7a7
 
 ## Backend Setup
 
-This app requires a backend API server for full functionality. The backend connects to n8n workflow and MySQL database.
+This app requires a backend API server for full functionality. The backend connects to n8n workflows that manage data in Google Sheets via webhook APIs.
 
 Configure the API URL in your `.env` file:
 ```
