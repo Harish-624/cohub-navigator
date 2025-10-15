@@ -79,5 +79,21 @@ export const api = {
     const response = await fetch(`${N8N_BASE_URL}/webhook-test/fetch-sheets-data`);
     if (!response.ok) throw new Error('Failed to fetch spaces');
     return response.json();
+  },
+
+  removeDuplicates: async (placeIds: string[]): Promise<{ success: boolean; message: string }> => {
+    const response = await fetch(`${N8N_BASE_URL}/webhook-test/duplicate-remover`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ idsToRemove: placeIds })
+    });
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Failed to remove duplicates' }));
+      throw new Error(error.message || 'Failed to remove duplicates');
+    }
+    return response.json();
   }
 };

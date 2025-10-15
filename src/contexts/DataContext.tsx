@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { CoworkingSpace, UploadMetadata } from '@/types/coworking';
-import { getAllSpaces, getLatestUpload } from '@/lib/db';
+import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
 interface DataContextType {
@@ -21,17 +21,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const refreshData = async () => {
     try {
       setLoading(true);
-      const [spacesData, uploadData] = await Promise.all([
-        getAllSpaces(),
-        getLatestUpload()
-      ]);
+      const spacesData = await api.fetchSpaces();
       setSpaces(spacesData);
-      setLastUpload(uploadData || null);
+      
+      // Set last upload timestamp based on most recent data
+      if (spacesData.length > 0) {
+        const timestamps = spacesData
+          .map(s => s.search_timestamp ? new Date(s.search_timestamp) : null)
+          .filter((d): d is Date => d !== null && !isNaN(d.getTime()));
+        
+        if (timestamps.length > 0) {
+          const latestTimestamp = new Date(Math.max(...timestamps.map(d => d.getTime())));
+          setLastUpload({
+            id: 'api-fetch',
+            filename: 'Google Sheets API',
+            timestamp: latestTimestamp,
+            recordCount: spacesData.length,
+            processingTime: 0,
+            status: 'success'
+          });
+        }
+      }
     } catch (error) {
       console.error('Error loading data:', error);
       toast({
         title: 'Error',
-        description: 'Failed to load data from storage',
+        description: 'Failed to fetch data from API',
         variant: 'destructive',
       });
     } finally {

@@ -4,7 +4,6 @@ import { PageHeader } from '@/components/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Slider } from '@/components/ui/slider';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { useData } from '@/contexts/DataContext';
@@ -12,13 +11,15 @@ import { detectDuplicates } from '@/lib/dataProcessing';
 import { CoworkingSpace } from '@/types/coworking';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
+import { api } from '@/lib/api';
 
 type DetectionMethod = 'place_id' | 'name_address' | 'coordinates';
 
 export default function Duplicates() {
-  const { spaces, loading } = useData();
+  const { spaces, loading, refreshData } = useData();
   const [method, setMethod] = useState<DetectionMethod>('place_id');
   const [scanning, setScanning] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [duplicateGroups, setDuplicateGroups] = useState<CoworkingSpace[][]>([]);
   const { toast } = useToast();
 
@@ -33,6 +34,38 @@ export default function Duplicates() {
         description: `Found ${groups.length} duplicate ${groups.length === 1 ? 'group' : 'groups'}`,
       });
     }, 1000);
+  };
+
+  const handleRemoveDuplicates = async (group: CoworkingSpace[], keepFirst: boolean) => {
+    const idsToRemove = keepFirst ? group.slice(1).map(s => s.place_id) : group.map(s => s.place_id);
+    
+    try {
+      setRemoving(true);
+      toast({
+        title: '⏳ Removing duplicates...',
+        description: 'Processing your request',
+      });
+
+      await api.removeDuplicates(idsToRemove);
+      
+      toast({
+        title: '✓ Success!',
+        description: `Removed ${idsToRemove.length} duplicate${idsToRemove.length > 1 ? 's' : ''}`,
+      });
+
+      // Refresh data and re-scan
+      await refreshData();
+      const newGroups = detectDuplicates(spaces, method);
+      setDuplicateGroups(newGroups);
+    } catch (error) {
+      toast({
+        title: '✗ Failed to remove duplicates',
+        description: error instanceof Error ? error.message : 'An error occurred',
+        variant: 'destructive',
+      });
+    } finally {
+      setRemoving(false);
+    }
   };
 
   const totalDuplicates = useMemo(() => {
@@ -189,16 +222,25 @@ export default function Duplicates() {
                   </div>
 
                   <div className="flex gap-2 mt-4 pt-4 border-t border-border">
-                    <Button variant="outline" size="sm" className="flex-1">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={() => handleRemoveDuplicates(group, true)}
+                      disabled={removing}
+                    >
                       <CheckCircle2 className="h-4 w-4 mr-2" />
                       Keep First
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1">
-                      Keep All
-                    </Button>
-                    <Button variant="destructive" size="sm" className="flex-1">
+                    <Button 
+                      variant="destructive" 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={() => handleRemoveDuplicates(group, false)}
+                      disabled={removing}
+                    >
                       <Trash2 className="h-4 w-4 mr-2" />
-                      Remove Duplicates
+                      Remove All
                     </Button>
                   </div>
                 </CardContent>
