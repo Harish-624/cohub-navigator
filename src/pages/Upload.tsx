@@ -1,346 +1,445 @@
-import { useState, useCallback, useEffect } from 'react';
-import { Upload as UploadIcon, FileText, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
-import Papa from 'papaparse';
-import { PageHeader } from '@/components/PageHeader';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState } from 'react';
+import { Upload, MapPin, Database } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
-import { CoworkingSpace, UploadMetadata } from '@/types/coworking';
-import { saveSpaces, saveUpload } from '@/lib/db';
 import { useData } from '@/contexts/DataContext';
-import { useNavigate } from 'react-router-dom';
-import { cn } from '@/lib/utils';
-import { api, type UploadResponse, type UploadStatus } from '@/lib/api';
+import Papa from 'papaparse';
 
-export default function Upload() {
-  const [dragActive, setDragActive] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [status, setStatus] = useState<string>('');
-  const [uploadResult, setUploadResult] = useState<UploadMetadata | null>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [uploadingToBackend, setUploadingToBackend] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [uploadStatus, setUploadStatus] = useState<UploadStatus | null>(null);
-  const [processingStage, setProcessingStage] = useState<string>('');
+export default function UploadPage() {
   const { toast } = useToast();
   const { refreshData } = useData();
-  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
 
-  const handleDrag = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
-  }, []);
+  // CSV Upload State
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvPreview, setCsvPreview] = useState<any[]>([]);
 
-  const processFile = async (selectedFile: File) => {
-    if (!selectedFile.name.endsWith('.csv')) {
+  // Single Location State
+  const [singleLocation, setSingleLocation] = useState({
+    city: '',
+    region: '',
+    state: '',
+    country: '',
+    search_query: ''
+  });
+
+  const handleCsvChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.csv')) {
       toast({
-        title: 'Invalid File Type',
+        title: '⚠️ Invalid File',
         description: 'Please upload a CSV file',
         variant: 'destructive',
       });
       return;
     }
 
-    setFile(selectedFile);
-    setUploading(true);
-    setUploadingToBackend(true);
-    setProcessingStage('Uploading file to server...');
+    setCsvFile(file);
 
-    try {
-      // Upload to backend
-      const uploadResponse = await api.uploadCSV(selectedFile);
-      
-      setSessionId(uploadResponse.session_id);
-      setProcessingStage(`Processing ${uploadResponse.total_cities} cities...`);
-      
+    // Parse CSV for preview
+    Papa.parse(file, {
+      header: true,
+      preview: 5,
+      complete: (results) => {
+        setCsvPreview(results.data);
+      }
+    });
+  };
+
+  const handleCsvSubmit = async () => {
+    if (!csvFile) {
       toast({
-        title: 'Upload Started',
-        description: `Session ID: ${uploadResponse.session_id}`,
-      });
-      
-    } catch (error) {
-      console.error('Upload error:', error);
-      toast({
-        title: 'Upload Failed',
-        description: error instanceof Error ? error.message : 'Upload failed',
+        title: '⚠️ Invalid Input',
+        description: 'Please select a CSV file',
         variant: 'destructive',
       });
-      setUploading(false);
-      setUploadingToBackend(false);
+      return;
+    }
+
+    setLoading(true);
+    const toastId = toast({
+      title: '⏳ Workflow Started',
+      description: 'Processing your data...',
+      duration: Infinity,
+    });
+
+    try {
+      // Parse full CSV
+      Papa.parse(csvFile, {
+        header: true,
+        complete: async (results) => {
+          const cities = results.data
+            .filter((row: any) => row.city && row.state && row.country)
+            .map((row: any) => ({
+              city: row.city,
+              state: row.state,
+              country: row.country,
+              region: row.region || '',
+              search_query: row.search_query || `coworking space in ${row.city}, ${row.state}`
+            }));
+
+          try {
+            const response = await api.processData({ cities });
+            
+            toastId.dismiss();
+            toast({
+              title: '✓ Success!',
+              description: `Processed ${response.processed || cities.length} coworking spaces`,
+              variant: 'default',
+            });
+
+            // Fetch updated data
+            await handleFetchData();
+            
+            // Reset form
+            setCsvFile(null);
+            setCsvPreview([]);
+          } catch (error: any) {
+            toastId.dismiss();
+            toast({
+              title: '✗ Processing Failed',
+              description: error.message,
+              variant: 'destructive',
+              duration: 10000,
+            });
+          } finally {
+            setLoading(false);
+          }
+        }
+      });
+    } catch (error: any) {
+      toastId.dismiss();
+      toast({
+        title: '✗ Processing Failed',
+        description: error.message,
+        variant: 'destructive',
+        duration: 10000,
+      });
+      setLoading(false);
     }
   };
 
-  // Polling effect for upload status
-  useEffect(() => {
-    if (!sessionId || uploadStatus?.status === 'completed' || uploadStatus?.status === 'failed') {
+  const handleSingleSubmit = async () => {
+    if (!singleLocation.city || !singleLocation.state || !singleLocation.country) {
+      toast({
+        title: '⚠️ Invalid Input',
+        description: 'Please provide city, state, and country',
+        variant: 'destructive',
+      });
       return;
     }
-    
-    const pollStatus = async () => {
-      try {
-        const status = await api.getUploadStatus(sessionId);
-        setUploadStatus(status);
-        
-        setProcessingStage(
-          `Processing: ${status.current_records} of ${status.total_cities} locations found...`
-        );
-        
-        if (status.status === 'completed') {
-          setProcessingStage('Fetching results from database...');
-          
-          // Fetch all spaces for this session
-          const spaces = await api.getAllSpaces(sessionId);
-          
-          // Save to IndexedDB
-          await saveSpaces(spaces as any, sessionId);
-          const metadata: UploadMetadata = {
-            id: sessionId,
-            filename: file?.name || 'upload.csv',
-            timestamp: new Date(),
-            recordCount: spaces.length,
-            processingTime: 0,
-            status: 'success',
-          };
-          await saveUpload(metadata);
-          
-          // Update context
-          await refreshData();
-          
-          setUploading(false);
-          setUploadingToBackend(false);
-          setUploadResult(metadata);
-          
-          toast({
-            title: 'Upload Complete',
-            description: `Successfully imported ${spaces.length} co-working spaces!`,
-          });
-          
-          // Reset for next upload
-          setTimeout(() => {
-            setFile(null);
-            setSessionId(null);
-            setUploadStatus(null);
-            setProcessingStage('');
-          }, 3000);
-        } else if (status.status === 'failed') {
-          throw new Error('Processing failed');
-        }
-      } catch (error) {
-        console.error('Status polling error:', error);
-        toast({
-          title: 'Processing Failed',
-          description: 'Failed to check upload status',
-          variant: 'destructive',
-        });
-        setUploading(false);
-        setUploadingToBackend(false);
-      }
-    };
-    
-    // Poll every 3 seconds
-    const interval = setInterval(pollStatus, 3000);
-    
-    // Initial poll
-    pollStatus();
-    
-    return () => clearInterval(interval);
-  }, [sessionId, uploadStatus?.status, file?.name, refreshData, toast]);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
+    setLoading(true);
+    const toastId = toast({
+      title: '⏳ Workflow Started',
+      description: 'Processing your data...',
+      duration: Infinity,
+    });
 
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processFile(e.dataTransfer.files[0]);
+    try {
+      const searchQuery = singleLocation.search_query || 
+        `coworking space in ${singleLocation.city}, ${singleLocation.state}`;
+
+      const response = await api.processData({
+        city: singleLocation.city,
+        region: singleLocation.region,
+        state: singleLocation.state,
+        country: singleLocation.country,
+        search_query: searchQuery
+      });
+
+      toastId.dismiss();
+      toast({
+        title: '✓ Success!',
+        description: `Processed coworking spaces for ${singleLocation.city}`,
+        variant: 'default',
+      });
+
+      // Fetch updated data
+      await handleFetchData();
+
+      // Reset form
+      setSingleLocation({
+        city: '',
+        region: '',
+        state: '',
+        country: '',
+        search_query: ''
+      });
+    } catch (error: any) {
+      toastId.dismiss();
+      toast({
+        title: '✗ Processing Failed',
+        description: error.message,
+        variant: 'destructive',
+        duration: 10000,
+      });
+    } finally {
+      setLoading(false);
     }
-  }, []);
+  };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    e.preventDefault();
-    if (e.target.files && e.target.files[0]) {
-      processFile(e.target.files[0]);
+  const handleLoadDefault = async () => {
+    setLoading(true);
+    const toastId = toast({
+      title: '⏳ Workflow Started',
+      description: 'Loading default data...',
+      duration: Infinity,
+    });
+
+    try {
+      const response = await api.processData({ command: 'start' });
+
+      toastId.dismiss();
+      toast({
+        title: '✓ Success!',
+        description: response.message || 'Default data loaded successfully',
+        variant: 'default',
+      });
+
+      // Fetch updated data
+      await handleFetchData();
+    } catch (error: any) {
+      toastId.dismiss();
+      toast({
+        title: '✗ Processing Failed',
+        description: error.message,
+        variant: 'destructive',
+        duration: 10000,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFetchData = async () => {
+    const fetchToast = toast({
+      title: '🔄 Fetching coworking spaces...',
+      description: 'Loading data from database',
+      duration: Infinity,
+    });
+
+    try {
+      const spaces = await api.fetchSpaces();
+      
+      fetchToast.dismiss();
+      toast({
+        title: '✓ Data Loaded',
+        description: `Loaded ${spaces.length} spaces from database`,
+        variant: 'default',
+        duration: 3000,
+      });
+
+      // Refresh the data context
+      await refreshData();
+    } catch (error: any) {
+      fetchToast.dismiss();
+      toast({
+        title: '✗ Fetch Failed',
+        description: error.message,
+        variant: 'destructive',
+      });
     }
   };
 
   return (
-    <div>
-      <PageHeader 
-        title="Upload Data" 
-        description="Import co-working space data from CSV files"
-      />
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold">Upload Data</h1>
+        <p className="text-muted-foreground mt-2">
+          Process coworking space data through multiple input methods
+        </p>
+      </div>
 
-      {!uploading && !uploadResult && (
-        <Card 
-          className={cn(
-            "border-2 border-dashed transition-smooth",
-            dragActive ? "border-primary bg-primary/5" : "border-border"
-          )}
-          onDragEnter={handleDrag}
-          onDragLeave={handleDrag}
-          onDragOver={handleDrag}
-          onDrop={handleDrop}
-        >
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10 mb-4">
-              <UploadIcon className="h-10 w-10 text-primary" />
-            </div>
-            <h3 className="text-xl font-semibold mb-2">Upload CSV File</h3>
-            <p className="text-muted-foreground text-center mb-6 max-w-md">
-              Drag and drop your CSV file here, or click to browse
-            </p>
-            <input
-              type="file"
-              id="file-upload"
-              accept=".csv"
-              onChange={handleChange}
-              className="hidden"
-            />
-            <Button asChild>
-              <label htmlFor="file-upload" className="cursor-pointer">
-                <FileText className="mr-2 h-4 w-4" />
-                Select CSV File
-              </label>
-            </Button>
-            <p className="text-xs text-muted-foreground mt-4">
-              Supported format: CSV (.csv)
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      <Tabs defaultValue="csv" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="csv">
+            <Upload className="w-4 h-4 mr-2" />
+            CSV Upload
+          </TabsTrigger>
+          <TabsTrigger value="single">
+            <MapPin className="w-4 h-4 mr-2" />
+            Single Location
+          </TabsTrigger>
+          <TabsTrigger value="default">
+            <Database className="w-4 h-4 mr-2" />
+            Load Default
+          </TabsTrigger>
+        </TabsList>
 
-      {uploading && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Processing Upload</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-center space-y-3 flex-col">
-              <div className="flex items-center space-x-3">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                <p className="text-lg font-medium">{processingStage || 'Processing...'}</p>
-              </div>
-            </div>
+        <TabsContent value="csv" className="space-y-4">
+          <Card className="p-6">
+            <h3 className="text-lg font-semibold mb-4">📤 CSV Upload (Bulk Processing)</h3>
             
-            {uploadStatus && (
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>Progress</span>
-                  <span>{uploadStatus.current_records} / {uploadStatus.total_cities} locations</span>
-                </div>
-                <div className="w-full bg-secondary rounded-full h-2">
-                  <div 
-                    className="bg-primary h-2 rounded-full transition-all duration-300"
-                    style={{ 
-                      width: `${(uploadStatus.current_records / uploadStatus.total_cities) * 100}%` 
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-            
-            <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
-              <div className="animate-spin h-5 w-5 border-2 border-primary border-t-transparent rounded-full" />
-              <span className="text-sm text-muted-foreground">
-                Please wait while we process your data...
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {uploadResult && (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-col items-center text-center space-y-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-success/10">
-                <CheckCircle2 className="h-8 w-8 text-success" />
-              </div>
+            <div className="space-y-4">
               <div>
-                <h3 className="text-2xl font-bold mb-2">Upload Complete!</h3>
-                <p className="text-muted-foreground">
-                  Successfully processed {uploadResult.recordCount.toLocaleString()} co-working spaces
+                <Label htmlFor="csv-file">Upload CSV File</Label>
+                <Input
+                  id="csv-file"
+                  type="file"
+                  accept=".csv"
+                  onChange={handleCsvChange}
+                  disabled={loading}
+                  className="mt-2"
+                />
+              </div>
+
+              {csvPreview.length > 0 && (
+                <div>
+                  <Label>Preview (First 5 rows)</Label>
+                  <div className="mt-2 border rounded-md overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted">
+                        <tr>
+                          {Object.keys(csvPreview[0]).map((key) => (
+                            <th key={key} className="px-4 py-2 text-left font-medium">
+                              {key}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {csvPreview.map((row, idx) => (
+                          <tr key={idx} className="border-t">
+                            {Object.values(row).map((val: any, i) => (
+                              <td key={i} className="px-4 py-2">
+                                {val}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-muted/50 p-4 rounded-md">
+                <p className="text-sm font-medium mb-2">Required Columns:</p>
+                <ul className="text-sm space-y-1">
+                  <li>• <strong>city</strong> - City name (e.g., "Manhattan")</li>
+                  <li>• <strong>state</strong> - State/Province (e.g., "NY")</li>
+                  <li>• <strong>country</strong> - Country name (e.g., "USA")</li>
+                  <li>• <strong>region</strong> - Region (optional, e.g., "Downtown")</li>
+                  <li>• <strong>search_query</strong> - Custom query (optional)</li>
+                </ul>
+              </div>
+
+              <Button 
+                onClick={handleCsvSubmit} 
+                disabled={!csvFile || loading}
+                className="w-full"
+              >
+                {loading ? 'Processing...' : 'Process CSV'}
+              </Button>
+            </div>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="single" className="space-y-4">
+          <Card className="p-6">
+            <h3 className="text-lg font-semibold mb-4">📍 Single Location (One City Search)</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="city">City *</Label>
+                <Input
+                  id="city"
+                  placeholder="e.g., Manhattan"
+                  value={singleLocation.city}
+                  onChange={(e) => setSingleLocation({ ...singleLocation, city: e.target.value })}
+                  disabled={loading}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="region">Region (optional)</Label>
+                <Input
+                  id="region"
+                  placeholder="e.g., Downtown, Midtown"
+                  value={singleLocation.region}
+                  onChange={(e) => setSingleLocation({ ...singleLocation, region: e.target.value })}
+                  disabled={loading}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="state">State *</Label>
+                <Input
+                  id="state"
+                  placeholder="e.g., NY, California"
+                  value={singleLocation.state}
+                  onChange={(e) => setSingleLocation({ ...singleLocation, state: e.target.value })}
+                  disabled={loading}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="country">Country *</Label>
+                <Input
+                  id="country"
+                  placeholder="e.g., USA, UK"
+                  value={singleLocation.country}
+                  onChange={(e) => setSingleLocation({ ...singleLocation, country: e.target.value })}
+                  disabled={loading}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="search_query">Search Query (optional)</Label>
+                <Input
+                  id="search_query"
+                  placeholder="Auto-generated or custom"
+                  value={singleLocation.search_query}
+                  onChange={(e) => setSingleLocation({ ...singleLocation, search_query: e.target.value })}
+                  disabled={loading}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Leave empty to auto-generate: "coworking space in {singleLocation.city || 'City'}, {singleLocation.state || 'State'}"
                 </p>
               </div>
 
-              <div className="w-full max-w-md space-y-2 text-left">
-                <div className="flex justify-between py-2 border-b border-border">
-                  <span className="text-sm text-muted-foreground">File name:</span>
-                  <span className="text-sm font-medium">{uploadResult.filename}</span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-border">
-                  <span className="text-sm text-muted-foreground">Records processed:</span>
-                  <span className="text-sm font-medium">{uploadResult.recordCount.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-border">
-                  <span className="text-sm text-muted-foreground">Processing time:</span>
-                  <span className="text-sm font-medium">{(uploadResult.processingTime / 1000).toFixed(2)}s</span>
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <Button onClick={() => navigate('/spaces')}>
-                  View All Spaces
-                </Button>
-                <Button variant="outline" onClick={() => navigate('/')}>
-                  Go to Dashboard
-                </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={() => {
-                    setUploadResult(null);
-                    setProgress(0);
-                    setStatus('');
-                  }}
-                >
-                  Upload Another
-                </Button>
-              </div>
+              <Button 
+                onClick={handleSingleSubmit} 
+                disabled={loading}
+                className="w-full"
+              >
+                {loading ? 'Processing...' : 'Search Location'}
+              </Button>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </Card>
+        </TabsContent>
 
-      {/* Upload Instructions */}
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>CSV Format Requirements</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <h4 className="font-medium mb-2">Required Columns:</h4>
-            <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
-              <li><code className="px-1 py-0.5 bg-muted rounded text-xs">region</code> - Region name</li>
-              <li><code className="px-1 py-0.5 bg-muted rounded text-xs">city</code> - City name</li>
-              <li><code className="px-1 py-0.5 bg-muted rounded text-xs">state</code> - State name</li>
-              <li><code className="px-1 py-0.5 bg-muted rounded text-xs">country</code> - Country name</li>
-            </ul>
-          </div>
+        <TabsContent value="default" className="space-y-4">
+          <Card className="p-6">
+            <h3 className="text-lg font-semibold mb-4">📊 Load Default (From Google Sheets)</h3>
+            
+            <div className="space-y-4">
+              <div className="bg-muted/50 p-4 rounded-md">
+                <p className="text-sm">
+                  Fetches pre-configured coworking spaces from your Google Sheets database.
+                  This will load all existing data and process it through the workflow.
+                </p>
+              </div>
 
-          <div>
-            <h4 className="font-medium mb-2">Optional Columns:</h4>
-            <p className="text-sm text-muted-foreground">
-              state, country, region, phone, website, rating, reviews, latitude, longitude, 
-              accessibility_features, amenities, and more.
-            </p>
-          </div>
-
-          <div className="flex items-start gap-2 p-3 bg-info/10 border border-info/20 rounded-lg">
-            <AlertCircle className="h-5 w-5 text-info flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-foreground">
-              <strong>Tip:</strong> Ensure your CSV file is properly formatted with headers in the first row. 
-              Rows with missing required fields will be automatically filtered out.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+              <Button 
+                onClick={handleLoadDefault} 
+                disabled={loading}
+                className="w-full"
+              >
+                {loading ? 'Loading...' : 'Load Existing Data'}
+              </Button>
+            </div>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

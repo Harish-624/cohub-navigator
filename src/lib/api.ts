@@ -1,21 +1,27 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const N8N_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5678';
 
-export interface UploadResponse {
-  success: boolean;
-  session_id: string;
-  message: string;
-  total_cities: number;
+export interface ProcessDataRequest {
+  csvContent?: string;
+  cities?: Array<{
+    city: string;
+    state: string;
+    country: string;
+    region?: string;
+    search_query?: string;
+  }>;
+  city?: string;
+  region?: string;
+  state?: string;
+  country?: string;
+  search_query?: string;
+  command?: string;
 }
 
-export interface UploadStatus {
-  session_id: string;
-  filename: string;
-  status: 'processing' | 'completed' | 'failed';
-  upload_timestamp: string;
-  completed_timestamp?: string | null;
-  total_cities: number;
-  current_records: number;
-  total_records: number;
+export interface ProcessDataResponse {
+  success: boolean;
+  message: string;
+  total_cities?: number;
+  processed?: number;
 }
 
 export interface CoworkingSpace {
@@ -53,41 +59,25 @@ export interface CoworkingSpace {
 }
 
 export const api = {
-  uploadCSV: async (file: File): Promise<UploadResponse> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    const response = await fetch(`${API_BASE_URL}/api/upload`, {
+  processData: async (data: ProcessDataRequest): Promise<ProcessDataResponse> => {
+    const response = await fetch(`${N8N_BASE_URL}/webhook-test/map-data-master`, {
       method: 'POST',
-      body: formData
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data)
     });
     
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Upload failed');
+      const error = await response.json().catch(() => ({ message: 'Processing failed' }));
+      throw new Error(error.message || 'Processing failed');
     }
     return response.json();
   },
 
-  getUploadStatus: async (sessionId: string): Promise<UploadStatus> => {
-    const response = await fetch(`${API_BASE_URL}/api/upload/status/${sessionId}`);
-    if (!response.ok) throw new Error('Status check failed');
-    return response.json();
-  },
-
-  getAllSpaces: async (sessionId?: string): Promise<CoworkingSpace[]> => {
-    const url = sessionId 
-      ? `${API_BASE_URL}/api/spaces?session_id=${sessionId}&limit=5000`
-      : `${API_BASE_URL}/api/spaces?limit=5000`;
-    
-    const response = await fetch(url);
+  fetchSpaces: async (): Promise<CoworkingSpace[]> => {
+    const response = await fetch(`${N8N_BASE_URL}/webhook-test/fetch-sheets-data`);
     if (!response.ok) throw new Error('Failed to fetch spaces');
-    return response.json();
-  },
-
-  getUploadHistory: async (): Promise<UploadStatus[]> => {
-    const response = await fetch(`${API_BASE_URL}/api/uploads/history`);
-    if (!response.ok) throw new Error('Failed to fetch history');
     return response.json();
   }
 };
