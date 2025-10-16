@@ -24,23 +24,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const spacesData = await api.fetchSpaces();
       setSpaces(spacesData);
       
-      // Set last upload timestamp based on most recent data
+      // Set last upload timestamp
       if (spacesData.length > 0) {
-        const timestamps = spacesData
-          .map(s => s.search_timestamp ? new Date(s.search_timestamp) : null)
-          .filter((d): d is Date => d !== null && !isNaN(d.getTime()));
-        
-        if (timestamps.length > 0) {
-          const latestTimestamp = new Date(Math.max(...timestamps.map(d => d.getTime())));
-          setLastUpload({
-            id: 'api-fetch',
-            filename: 'Google Sheets API',
-            timestamp: latestTimestamp,
-            recordCount: spacesData.length,
-            processingTime: 0,
-            status: 'success'
-          });
-        }
+        setLastUpload({
+          id: 'api-fetch',
+          filename: 'Google Sheets API',
+          timestamp: new Date(),
+          recordCount: spacesData.length,
+          processingTime: 0,
+          status: 'success'
+        });
       }
     } catch (error) {
       console.error('Error loading data:', error);

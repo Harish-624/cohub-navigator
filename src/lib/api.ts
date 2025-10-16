@@ -25,10 +25,10 @@ export interface ProcessDataResponse {
 }
 
 export interface CoworkingSpace {
-  id: number;
-  session_id: string;
-  place_id: string;
+  row_number: number;
+  position: number;
   name: string;
+  place_id: string;
   address: string;
   city: string;
   state: string;
@@ -36,26 +36,19 @@ export interface CoworkingSpace {
   region?: string;
   latitude?: number;
   longitude?: number;
+  rating?: number;
+  reviews?: number;
   phone?: string;
   website?: string;
   category?: string;
-  rating?: number;
-  reviews_count?: number;
-  open_state?: string;
-  operating_hours?: string;
-  wheelchair_accessible: boolean;
-  lgbtq_friendly: boolean;
-  women_owned: boolean;
-  gender_neutral_toilets: boolean;
-  online_appointments: boolean;
-  onsite_services: boolean;
-  thumbnail?: string;
-  amenities?: string;
   accessibility_features?: string;
+  amenities?: string;
   parking_options?: string;
   crowd_info?: string;
   from_business?: string;
-  search_timestamp: string;
+  operating_hours?: string;
+  open_state?: string;
+  thumbnail?: string;
 }
 
 export const api = {
