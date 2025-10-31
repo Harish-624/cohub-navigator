@@ -69,7 +69,7 @@ export const api = {
   },
 
   fetchSpaces: async (): Promise<CoworkingSpace[]> => {
-    const response = await fetch(`${N8N_BASE_URL}/webhook/fetch-sheets-data`);
+    const response = await fetch(`http://localhost:5678/webhook/fetch-sheets-data`);
     if (!response.ok) throw new Error('Failed to fetch spaces');
     return response.json();
   },

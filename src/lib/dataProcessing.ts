@@ -5,7 +5,7 @@ export function groupByCity(spaces: CoworkingSpace[]): CityData[] {
   const grouped = _.groupBy(spaces, (space) => 
     `${space.city}-${space.state || ''}-${space.country}`
   );
-
+  console.log('Grouped by city:', grouped);
   return Object.entries(grouped).map(([key, spacesList]) => {
     const firstSpace = spacesList[0];
     return {
@@ -125,8 +125,12 @@ function detectByPlaceId(spaces: CoworkingSpace[]): CoworkingSpace[][] {
 function detectByNameAddress(spaces: CoworkingSpace[]): CoworkingSpace[][] {
   const normalized = spaces.map(space => ({
     ...space,
-    normalizedName: space.name.toLowerCase().trim(),
-    normalizedAddress: space.address.toLowerCase().trim(),
+    normalizedName: typeof space.name === 'string'
+      ? space.name.toLowerCase().trim()
+      : String(space.name || '').toLowerCase().trim(),
+    normalizedAddress: typeof space.address === 'string'
+      ? space.address.toLowerCase().trim()
+      : String(space.address || '').toLowerCase().trim(),
   }));
 
   const grouped = _.groupBy(
@@ -136,6 +140,7 @@ function detectByNameAddress(spaces: CoworkingSpace[]): CoworkingSpace[][] {
 
   return Object.values(grouped).filter(group => group.length > 1);
 }
+
 
 function detectByCoordinates(spaces: CoworkingSpace[], threshold = 0.0001): CoworkingSpace[][] {
   const withCoords = spaces.filter(s => s.latitude && s.longitude);
