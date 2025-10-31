@@ -1,4 +1,5 @@
 export interface CoworkingSpace {
+  row_number?: number;
   position?: number;
   name: string;
   place_id?: string;
