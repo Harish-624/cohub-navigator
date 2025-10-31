@@ -94,6 +94,7 @@ export default function Duplicates() {
     // Collect all row numbers except the first (original) from each group
     const allDuplicateRows: number[] = [];
     
+
     duplicateGroups.forEach(group => {
       const rowsToRemove = group.slice(1).filter(s => s.row_number).map(s => s.row_number!);
       allDuplicateRows.push(...rowsToRemove);
@@ -112,7 +113,7 @@ export default function Duplicates() {
     try {
       setRemoving(true);
       setShowClearDialog(false);
-      
+      console.log('Duplicate Groups:', duplicateGroups);
       toast({
         title: '⏳ Removing all duplicates...',
         description: `Deleting ${allDuplicateRows.length} duplicate entries`,
