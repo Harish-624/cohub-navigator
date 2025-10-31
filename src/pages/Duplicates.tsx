@@ -37,7 +37,18 @@ export default function Duplicates() {
   };
 
   const handleRemoveDuplicates = async (group: CoworkingSpace[], keepFirst: boolean) => {
-    const idsToRemove = keepFirst ? group.slice(1).map(s => s.place_id) : group.map(s => s.place_id);
+    const rowsToRemove = keepFirst 
+      ? group.slice(1).filter(s => s.row_number).map(s => s.row_number!) 
+      : group.filter(s => s.row_number).map(s => s.row_number!);
+    
+    if (rowsToRemove.length === 0) {
+      toast({
+        title: '✗ Cannot remove rows',
+        description: 'No row numbers available for deletion',
+        variant: 'destructive',
+      });
+      return;
+    }
     
     try {
       setRemoving(true);
@@ -46,11 +57,11 @@ export default function Duplicates() {
         description: 'Processing your request',
       });
 
-      await api.removeDuplicates(idsToRemove);
+      await api.deleteRows(rowsToRemove);
       
       toast({
         title: '✓ Success!',
-        description: `Removed ${idsToRemove.length} duplicate${idsToRemove.length > 1 ? 's' : ''}`,
+        description: `Removed ${rowsToRemove.length} duplicate${rowsToRemove.length > 1 ? 's' : ''}`,
       });
 
       // Refresh data and re-scan

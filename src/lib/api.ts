@@ -25,7 +25,7 @@ export interface ProcessDataResponse {
 }
 
 export interface CoworkingSpace {
-  row_number: number;
+  row_number?: number;
   position: number;
   name: string;
   place_id: string;
@@ -74,18 +74,18 @@ export const api = {
     return response.json();
   },
 
-  removeDuplicates: async (placeIds: string[]): Promise<{ success: boolean; message: string }> => {
-    const response = await fetch(`${N8N_BASE_URL}/webhook/duplicate-remover`, {
+  deleteRows: async (rowNumbers: number[]): Promise<{ success: boolean; message: string }> => {
+    const response = await fetch(`${N8N_BASE_URL}/webhook/delete-rows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ idsToRemove: placeIds })
+      body: JSON.stringify({ rowNumbers })
     });
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Failed to remove duplicates' }));
-      throw new Error(error.message || 'Failed to remove duplicates');
+      const error = await response.json().catch(() => ({ message: 'Failed to delete rows' }));
+      throw new Error(error.message || 'Failed to delete rows');
     }
     return response.json();
   }
