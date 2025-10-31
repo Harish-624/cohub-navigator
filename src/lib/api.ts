@@ -75,7 +75,7 @@ export const api = {
   },
 
   deleteRows: async (rowNumbers: number[]): Promise<{ success: boolean; message: string }> => {
-    const response = await fetch(`${N8N_BASE_URL}/webhook/delete-rows`, {
+    const response = await fetch(`http://localhost:5678/webhook/delete-rows`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
