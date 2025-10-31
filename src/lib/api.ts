@@ -53,7 +53,7 @@ export interface CoworkingSpace {
 
 export const api = {
   processData: async (data: ProcessDataRequest): Promise<ProcessDataResponse> => {
-    const response = await fetch(`${N8N_BASE_URL}/webhook-test/map-data-master`, {
+    const response = await fetch(`${N8N_BASE_URL}/webhook/map-data-master`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -69,7 +69,7 @@ export const api = {
   },
 
   fetchSpaces: async (): Promise<CoworkingSpace[]> => {
-    const response = await fetch(`${N8N_BASE_URL}/webhook-test/fetch-sheets-data`);
+    const response = await fetch(`${N8N_BASE_URL}/webhook/fetch-sheets-data`);
     if (!response.ok) throw new Error('Failed to fetch spaces');
     return response.json();
   },
