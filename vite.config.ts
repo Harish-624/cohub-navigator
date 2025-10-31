@@ -4,7 +4,7 @@ import path from "path";
 import { componentTagger } from "lovable-tagger";
 
 export default defineConfig(({ mode }) => ({
-  base: "/cohub-navigator/", // 👈 REQUIRED for GitHub Pages subpath
+  base: "/cohub-navigator/", 
   server: {
     host: "::",
     port: 8080,
