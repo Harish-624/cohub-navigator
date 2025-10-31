@@ -104,7 +104,7 @@ export default function UploadPage() {
           } catch (error: any) {
             toastId.dismiss();
             toast({
-              title: '✗ Processing Failed',
+              title: 'Processing Failed',
               description: error.message,
               variant: 'destructive',
               duration: 10000,
@@ -117,7 +117,7 @@ export default function UploadPage() {
     } catch (error: any) {
       toastId.dismiss();
       toast({
-        title: '✗ Processing Failed',
+        title: 'Processing Failed',
         description: error.message,
         variant: 'destructive',
         duration: 10000,
@@ -176,7 +176,7 @@ export default function UploadPage() {
     } catch (error: any) {
       toastId.dismiss();
       toast({
-        title: '✗ Processing Failed',
+        title: 'Processing Failed',
         description: error.message,
         variant: 'destructive',
         duration: 10000,
@@ -209,7 +209,7 @@ export default function UploadPage() {
     } catch (error: any) {
       toastId.dismiss();
       toast({
-        title: '✗ Processing Failed',
+        title: 'Processing Failed',
         description: error.message,
         variant: 'destructive',
         duration: 10000,
