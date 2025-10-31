@@ -12,6 +12,16 @@ import { CoworkingSpace } from '@/types/coworking';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api } from '@/lib/api';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 type DetectionMethod = 'place_id' | 'name_address' | 'coordinates';
 
@@ -21,6 +31,7 @@ export default function Duplicates() {
   const [scanning, setScanning] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [duplicateGroups, setDuplicateGroups] = useState<CoworkingSpace[][]>([]);
+  const [showClearDialog, setShowClearDialog] = useState(false);
   const { toast } = useToast();
 
   const handleScan = () => {
@@ -79,8 +90,61 @@ export default function Duplicates() {
     }
   };
 
+  const handleClearAllDuplicates = async () => {
+    // Collect all row numbers except the first (original) from each group
+    const allDuplicateRows: number[] = [];
+    
+    duplicateGroups.forEach(group => {
+      const rowsToRemove = group.slice(1).filter(s => s.row_number).map(s => s.row_number!);
+      allDuplicateRows.push(...rowsToRemove);
+    });
+    
+    if (allDuplicateRows.length === 0) {
+      toast({
+        title: '✗ Cannot remove rows',
+        description: 'No row numbers available for deletion',
+        variant: 'destructive',
+      });
+      setShowClearDialog(false);
+      return;
+    }
+    
+    try {
+      setRemoving(true);
+      setShowClearDialog(false);
+      
+      toast({
+        title: '⏳ Removing all duplicates...',
+        description: `Deleting ${allDuplicateRows.length} duplicate entries`,
+      });
+
+      await api.deleteRows(allDuplicateRows);
+      
+      toast({
+        title: '✓ Success!',
+        description: `Removed ${allDuplicateRows.length} duplicate${allDuplicateRows.length > 1 ? 's' : ''} from ${duplicateGroups.length} groups`,
+      });
+
+      // Refresh data and clear results
+      await refreshData();
+      setDuplicateGroups([]);
+    } catch (error) {
+      toast({
+        title: '✗ Failed to remove duplicates',
+        description: error instanceof Error ? error.message : 'An error occurred',
+        variant: 'destructive',
+      });
+    } finally {
+      setRemoving(false);
+    }
+  };
+
   const totalDuplicates = useMemo(() => {
     return duplicateGroups.reduce((sum, group) => sum + group.length, 0);
+  }, [duplicateGroups]);
+  
+  const totalDuplicatesToRemove = useMemo(() => {
+    return duplicateGroups.reduce((sum, group) => sum + Math.max(0, group.length - 1), 0);
   }, [duplicateGroups]);
 
   if (loading) {
@@ -172,8 +236,16 @@ export default function Duplicates() {
                   </p>
                 </div>
                 <div className="flex gap-2">
+                  <Button 
+                    variant="destructive" 
+                    onClick={() => setShowClearDialog(true)}
+                    disabled={removing}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Clear All Duplicates
+                  </Button>
                   <Button variant="outline" onClick={() => setDuplicateGroups([])}>
-                    Clear Results
+                    Close Results
                   </Button>
                 </div>
               </div>
@@ -289,6 +361,35 @@ export default function Duplicates() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Clear All Duplicates Confirmation Dialog */}
+      <AlertDialog open={showClearDialog} onOpenChange={setShowClearDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear All Duplicates?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <p>
+                This action will permanently delete <strong>{totalDuplicatesToRemove} duplicate entries</strong> from your database.
+              </p>
+              <p>
+                From each of the <strong>{duplicateGroups.length} duplicate groups</strong>, the first entry (marked as "Original") will be kept, and all other duplicates will be removed.
+              </p>
+              <p className="text-destructive font-medium">
+                This action cannot be undone.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleClearAllDuplicates}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete {totalDuplicatesToRemove} Duplicates
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
